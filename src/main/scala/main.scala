@@ -1,14 +1,17 @@
 import java.util.Properties
 
+import org.apache.commons.net.util.SubnetUtils
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.functions._
+
 
 object main {
   def main(args: Array[String]): Unit = {
     val sc = new SparkContext(new SparkConf().setMaster("local").setAppName("CountingSheep"))
 
     val session = SparkSession.builder().appName("CountingSheep").getOrCreate()
+    import session.implicits._
 
     val csvFormat = "com.databricks.spark.csv"
     val ordersPath = "orders.csv"
@@ -16,7 +19,7 @@ object main {
     val countryPath = "/Users/mnetreba/Downloads/countries.csv"
 
     // RDD from orders.csv
-    val rdd = session.read
+    val rddOrders = session.read
       .format(csvFormat)
       .option("header", value = false)
       .load(ordersPath)
@@ -36,27 +39,41 @@ object main {
       .load(countryPath)
       .rdd
 
-
     // Most frequently appeared categories with RDD
-    rdd.map(i => i(3)).map(i => (i,1)).reduceByKey(_+_).sortBy(_._2, ascending = false).take(10)
+    rddOrders.map(i => i(3)).map(i => (i,1)).reduceByKey(_+_).sortBy(_._2, ascending = false).take(10)
 
     // Most frequently appeared products with RDD
-    rdd.map(i => i(0)).map(i => (i,1)).reduceByKey(_+_).sortBy(_._2, ascending = false).take(10)
+    rddOrders.map(i => i(0)).map(i => (i,1)).reduceByKey(_+_).sortBy(_._2, ascending = false).take(10)
+
+    // Converting map with valid ips to RDD
+    val allIp = rddOrders.map(i => i(4)).map(_.toString).collect()
+    val networks = rddIps.map(i => i(0)).map(_.toString).collect()
+    val validIps = collection.mutable.Map[Any, Any]()
+
+    for (ip <- allIp) {
+      for (network <- networks) {
+        val utils = new SubnetUtils(network)
+        if (utils.getInfo.isInRange(ip)) validIps.put(ip,network) else ""
+      }
+    }
+
+    val networkIps = sc.parallelize(validIps.toList).map(i => (i._2,i._1))
 
     // Top 10 countries with RDD
     val ipData = rddIps.map(i => (i(0),i(1)))
     val countryData = rddCountries.map(i => (i(0),i(5)))
-    val ordersData = rdd.map(i => (i(4),i(1)))
+    val ordersData = rddOrders.map(i => (i(4),i(1)))
 
-    ipData.join(ordersData).map(i => i._2)
-      .join(countryData).map(i => i._2)
+    ipData.join(networkIps).map(i => i._2).map(_.swap)
+      .join(ordersData).map(_._2)
+      .join(countryData).map(_._2)
       .map(_.swap)
-      .mapValues(_.toString).mapValues(_.toInt).reduceByKey(_ + _).sortBy(i => i._2, ascending = false).take(10)
-
+      .mapValues(_.toString).mapValues(_.toInt).reduceByKey(_ + _)
+      .sortBy(i => i._2, ascending = false).take(10)
 
     // DF from orders.csv
     val orders = session.read.csv(ordersPath)
-      .toDF("product_name","product_price","purchase_date","product_category","network")
+      .toDF("product_name","product_price","purchase_date","product_category","client_ip")
 
     // DF from ips.csv
     val ips = session.read.csv(ipPath)
@@ -68,20 +85,24 @@ object main {
       .toDF("geoname_id","","","","","country_name","")
       .select("geoname_id","country_name")
 
+    // Converting map with valid ips to DF
+    val dfValidIps = validIps.map(i => (i._1.toString, i._2.toString)).toSeq.toDF("client_ip", "network")
+
     // Top 10 countries with DF
-    val topDF = ips.join(countries, Seq("geoname_id"))
-      .join(orders.select("product_price","network"), Seq("network"))
+    val topDF = ips.join(countries, Seq("geoname_id")).join(dfValidIps,Seq("network"))
+      .join(orders.select("product_price","client_ip"), Seq("client_ip"))
       .select("product_price","country_name")
       .groupBy("country_name")
       .agg(Map("product_price"->"sum"))
       .orderBy(desc("sum(product_price)"))
       .withColumnRenamed("sum(product_price)", "product_price")
+      .limit(10)
 
     // Most frequently appeared categories with DF
-    val categoriesDF = orders.groupBy("product_category").count().sort(desc("count"))
+    val categoriesDF = orders.groupBy("product_category").count().sort(desc("count")).limit(10)
 
     // Most frequently appeared products with DF
-    val productsDF = orders.groupBy("product_name").count().sort(desc("count"))
+    val productsDF = orders.groupBy("product_name").count().sort(desc("count")).limit(10)
 
 
     // Write to MySQL
@@ -94,6 +115,5 @@ object main {
     topDF.write.mode("append").jdbc(url,"spark_countries",prop)
     categoriesDF.write.mode("append").jdbc(url,"spark_categories",prop)
     productsDF.write.mode("append").jdbc(url,"spark_products",prop)
-
   }
 }
