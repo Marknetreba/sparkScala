@@ -20,7 +20,7 @@ object main {
     val url = "jdbc:mysql://localhost:3306/retail_db"
 
     val csvFormat = "com.databricks.spark.csv"
-    val ordersPath = "/Users/mnetreba/Downloads/orders.csv"
+    val ordersPath = "orders.csv"
     val ipPath = "/Users/mnetreba/Downloads/ips.csv"
     val countryPath = "/Users/mnetreba/Downloads/countries.csv"
 
