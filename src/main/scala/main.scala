@@ -40,19 +40,20 @@ object main {
 
 
     // Converting map with valid ips to RDD
-    val ipData = rddOrders.map(i => (i(4), i(1)))
+    val ipData = rddOrders.map(i => (i(4), i(1))).coalesce(5)
 
-    val data = ipData.map(part => (part._2, {
-      val reader = new DatabaseReader.Builder(mmdb).build()
-      val ipAddress = InetAddress.getByName(part._1.toString)
-      try {
-        val response = reader.country(ipAddress)
-        response.getCountry.getNames.get("en")
-      }
-      catch {
-        case e: AddressNotFoundException => ""
-      }
-    })).map(_.swap).filter(i => i._1 != "")
+    val data = ipData.mapPartitions(part => {
+      part.map(p => (p._2, {
+        val reader = new DatabaseReader.Builder(mmdb).build()
+        val ipAddress = InetAddress.getByName(p._1.toString)
+        try {
+          val response = reader.country(ipAddress)
+          response.getCountry.getNames.get("en")
+        }
+        catch {
+          case e: AddressNotFoundException => ""
+        }
+      }))}).map(_.swap).filter(i => i._1 != "")
 
     //Top 10 Countries
     data.mapValues(_.toString.toInt).reduceByKey(_ + _).sortBy(i => i._2, ascending = false).take(10)
