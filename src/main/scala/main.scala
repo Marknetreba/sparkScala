@@ -1,7 +1,9 @@
-import java.sql.DriverManager
+import java.io.File
+import java.net.InetAddress
 import java.util.Properties
 
-import org.apache.commons.net.util.SubnetUtils
+import com.maxmind.geoip2.DatabaseReader
+import com.maxmind.geoip2.exception.AddressNotFoundException
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.functions._
@@ -21,8 +23,7 @@ object main {
 
     val csvFormat = "com.databricks.spark.csv"
     val ordersPath = "orders.csv"
-    val ipPath = "/Users/mnetreba/Downloads/ips.csv"
-    val countryPath = "/Users/mnetreba/Downloads/countries.csv"
+    val mmdb = new File("/Users/mnetreba/Downloads/mmdb/countries.mmdb")
 
     // RDD from orders.csv
     val rddOrders = session.read
@@ -31,89 +32,41 @@ object main {
       .load(ordersPath)
       .rdd
 
-    // RDD from ips.csv
-    val rddIps = session.read
-      .format(csvFormat)
-      .option("header", value = true)
-      .load(ipPath)
-      .rdd
-
-    // RDD from countries.csv
-    val rddCountries = session.read
-      .format(csvFormat)
-      .option("header", value = true)
-      .load(countryPath)
-      .rdd
-
     // Most frequently appeared categories with RDD
-    rddOrders.map(i => i(3)).map(i => (i,1)).reduceByKey(_+_).sortBy(_._2, ascending = false).take(10)
+    rddOrders.map(i => i(3)).map(i => (i, 1)).reduceByKey(_ + _).sortBy(_._2, ascending = false).take(10)
 
     // Most frequently appeared products with RDD
-    rddOrders.map(i => i(0)).map(i => (i,1)).reduceByKey(_+_).sortBy(_._2, ascending = false).take(10)
+    rddOrders.map(i => i(0)).map(i => (i, 1)).reduceByKey(_ + _).sortBy(_._2, ascending = false).take(10)
 
 
     // Converting map with valid ips to RDD
-    val ipsPartitions = rddOrders.map(i => (i(4),i(1))).map(i => (i._1.toString, i._2.toString)).coalesce(5)
+    val ipData = rddOrders.map(i => (i(4), i(1)))
 
-    // All possible IP
-    val ipData = rddIps.map(i => (i(1),i(0)))
-    val countryData = rddCountries.map(i => (i(0),i(5))).filter(i => i._2 != null)
+    val data = ipData.map(part => (part._2, {
+      val reader = new DatabaseReader.Builder(mmdb).build()
+      val ipAddress = InetAddress.getByName(part._1.toString)
+      try {
+        val response = reader.country(ipAddress)
+        response.getCountry.getNames.get("en")
+      }
+      catch {
+        case e: AddressNotFoundException => ""
+      }
+    })).map(_.swap).filter(i => i._1 != "")
 
-    val data = ipData.join(countryData).map(_._2)
-      .map(i => (i._2, i._1, {
-        val utils = new SubnetUtils(i._1.toString)
-        utils.getInfo.getAllAddresses.toList
-      })).map(i => ((i._1, i._2), i._3))
-      .flatMapValues(x => x)
-      .map(_.swap)
-      .join(ipsPartitions)
-      .coalesce(5)
+    //Top 10 Countries
+    data.mapValues(_.toString.toInt).reduceByKey(_ + _).sortBy(i => i._2, ascending = false).take(10)
 
-    data.foreachPartition(part => {
-      val conn = DriverManager.getConnection(url, "retail_dba", "cloudera")
-      part.foreach(ip => {
-        val utils = new SubnetUtils(ip._2._1._2.toString)
-        if (utils.getInfo.isInRange(ip._1))
-          conn.createStatement().execute("INSERT INTO ip_countries(ip, country) VALUES (" + ip + ","+ ip._2._1._1 +")" )
-        else ""
-      })
-    })
-
-    // Take data from MySQL
-    val tableRDD = session.read.jdbc(url, "ip_countries", prop)
-      .select("ip","country")
-      .map(i => (i(0).toString, i(1).toString)).rdd
-
-    // Top 10 countries with RDD
-    val ordersData = rddOrders.map(i => (i(4),i(1))).map(i => (i._1.toString,i._2.toString)).coalesce(5)
-
-    ordersData.join(tableRDD).map(i => i._2).map(_.swap)
-      .map(_.swap)
-      .mapValues(_.toInt).reduceByKey(_ + _)
-      .sortBy(i => i._2, ascending = false).take(10)
 
     // DF from orders.csv
     val orders = session.read.csv(ordersPath)
-      .toDF("product_name","product_price","purchase_date","product_category","client_ip")
-
-    // DF from ips.csv
-    val ips = session.read.csv(ipPath)
-      .toDF("network","geoname_id","","","","")
-      .select("network", "geoname_id")
-
-    // DF from countries.csv
-    val countries = session.read.csv(countryPath)
-      .toDF("geoname_id","","","","","country_name","")
-      .select("geoname_id","country_name")
-
-    // Converting map with valid ips to DF
-    val dfValidIps = session.read.jdbc(url, "ip_countries", prop).select("ip","country").toDF("client_ip", "country")
+      .toDF("product_name", "product_price", "purchase_date", "product_category", "client_ip")
 
     // Top 10 countries with DF
-    val topDF = dfValidIps.join(orders.select("product_price","client_ip"), Seq("client_ip"))
-      .select("product_price","country")
-      .groupBy("country")
-      .agg(Map("product_price"->"sum"))
+    val dfValidIps = data.map(i => (i._1.toString, i._2.toString)).toDF("country", "product_price")
+
+    val topDF = dfValidIps.groupBy("country")
+      .agg(Map("product_price" -> "sum"))
       .orderBy(desc("sum(product_price)"))
       .withColumnRenamed("sum(product_price)", "product_price")
       .limit(10)
@@ -126,9 +79,8 @@ object main {
 
 
     // Write to MySQL
-
-    topDF.write.mode("append").jdbc(url,"spark_countries",prop)
-    categoriesDF.write.mode("append").jdbc(url,"spark_categories",prop)
-    productsDF.write.mode("append").jdbc(url,"spark_products",prop)
+    topDF.write.mode("append").jdbc(url, "spark_countries", prop)
+    categoriesDF.write.mode("append").jdbc(url, "spark_categories", prop)
+    productsDF.write.mode("append").jdbc(url, "spark_products", prop)
   }
 }
