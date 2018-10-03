@@ -4,16 +4,14 @@ import java.util.Properties
 
 import com.maxmind.geoip2.DatabaseReader
 import com.maxmind.geoip2.exception.AddressNotFoundException
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.SQLContext
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.functions._
 
 object main {
   def main(args: Array[String]): Unit = {
     val sc = new SparkContext(new SparkConf().setMaster("local[2]").setAppName("CountingSheep"))
-
-    val session = SparkSession.builder().appName("CountingSheep").getOrCreate()
-    import session.implicits._
+    val sql = new SQLContext(sc)
 
     // MySQL configs
     val prop = new Properties()
@@ -26,7 +24,7 @@ object main {
     val mmdb = new File("/Users/mnetreba/Downloads/mmdb/countries.mmdb")
 
     // RDD from orders.csv
-    val rddOrders = session.read
+    val rddOrders = sql.read
       .format(csvFormat)
       .option("header", value = false)
       .load(ordersPath)
@@ -60,11 +58,11 @@ object main {
 
 
     // DF from orders.csv
-    val orders = session.read.csv(ordersPath)
+    val orders = sql.read.csv(ordersPath)
       .toDF("product_name", "product_price", "purchase_date", "product_category", "client_ip")
 
     // Top 10 countries with DF
-    val dfValidIps = data.map(i => (i._1.toString, i._2.toString)).toDF("country", "product_price")
+    val dfValidIps = sql.createDataFrame(data.map(i => (i._1.toString, i._2.toString))).toDF("country", "product_price")
 
     val topDF = dfValidIps.groupBy("country")
       .agg(Map("product_price" -> "sum"))
