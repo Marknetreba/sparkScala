@@ -41,8 +41,8 @@ object main {
     val ipData = rddOrders.map(i => (i(4), i(1))).coalesce(5)
 
     val data = ipData.mapPartitions(part => {
+      val reader = new DatabaseReader.Builder(mmdb).build()
       part.map(p => (p._2, {
-        val reader = new DatabaseReader.Builder(mmdb).build()
         val ipAddress = InetAddress.getByName(p._1.toString)
         try {
           val response = reader.country(ipAddress)
