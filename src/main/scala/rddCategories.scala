@@ -1,7 +1,12 @@
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.{SparkConf, SparkContext}
 
-class rddCategories {
+object rddCategories {
+
+  def main(args: Array[String]): Unit = {
+    job()
+  }
+
   def job(): Unit = {
     val sc = new SparkContext(new SparkConf().setMaster("spark://master:7077").setAppName("CountingSheep"))
     val sql = new SQLContext(sc)

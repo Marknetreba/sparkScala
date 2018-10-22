@@ -4,7 +4,12 @@ import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.functions.desc
 import org.apache.spark.{SparkConf, SparkContext}
 
-class dfCategories {
+object dfCategories {
+
+    def main(args: Array[String]): Unit = {
+        job()
+    }
+
     def job(): Unit = {
         val sc = new SparkContext(new SparkConf().setMaster("spark://master:7077").setAppName("CountingSheep"))
         val sql = new SQLContext(sc)
