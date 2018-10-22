@@ -1,11 +1,10 @@
 import java.io.File
 import java.net.InetAddress
-import java.util.Properties
 
 import com.maxmind.geoip2.DatabaseReader
 import com.maxmind.geoip2.exception.AddressNotFoundException
-import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.SQLContext
+import org.apache.spark.{SparkConf, SparkContext}
 
 class rddCountries {
     def job(): Unit ={

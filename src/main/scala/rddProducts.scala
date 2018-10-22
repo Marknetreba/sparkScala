@@ -2,7 +2,7 @@ import org.apache.spark.sql.SQLContext
 import org.apache.spark.{SparkConf, SparkContext}
 
 class rddProducts {
-    def go(): Unit = {
+    def job(): Unit = {
       val sc = new SparkContext(new SparkConf().setMaster("local[2]").setAppName("CountingSheep"))
       val sql = new SQLContext(sc)
       val csvFormat = "com.databricks.spark.csv"

@@ -47,7 +47,7 @@ class dfCountries {
         }))}).map(_.swap).filter(i => i._1 != "")
 
       // Top 10 countries with DF
-      val dfValidIps = sql.createDataFrame(data.map(i => (i._1.toString, i._2.toString))).toDF("country", "product_price")
+      val dfValidIps = sql.createDataFrame(data.filter(i => i._1 != null && i._2!=null).map(i => (i._1.toString, i._2.toString))).toDF("country", "product_price")
 
       val topDF = dfValidIps.groupBy("country")
         .agg(Map("product_price" -> "sum"))
