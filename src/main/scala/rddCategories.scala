@@ -3,10 +3,10 @@ import org.apache.spark.{SparkConf, SparkContext}
 
 class rddCategories {
   def job(): Unit = {
-    val sc = new SparkContext(new SparkConf().setMaster("local[2]").setAppName("CountingSheep"))
+    val sc = new SparkContext(new SparkConf().setMaster("spark://master:7077").setAppName("CountingSheep"))
     val sql = new SQLContext(sc)
     val csvFormat = "com.databricks.spark.csv"
-    val ordersPath = "orders.csv"
+    val ordersPath = "hdfs:///tmp/orders/orders.csv"
 
     // RDD from orders.csv
     val rddOrders = sql.read

@@ -14,3 +14,5 @@ libraryDependencies ++= Seq(
   "mysql" % "mysql-connector-java" % "5.1.12",
   "com.maxmind.geoip2" % "geoip2" % "2.12.0"
 )
+
+assemblyJarName in assembly := "spark.jar"

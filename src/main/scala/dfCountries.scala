@@ -10,7 +10,7 @@ import org.apache.spark.sql.functions.desc
 
 class dfCountries {
     def job(): Unit = {
-      val sc = new SparkContext(new SparkConf().setMaster("local[2]").setAppName("CountingSheep"))
+      val sc = new SparkContext(new SparkConf().setMaster("spark://master:7077").setAppName("CountingSheep"))
       val sql = new SQLContext(sc)
 
       // MySQL configs
@@ -19,7 +19,7 @@ class dfCountries {
       prop.put("password", "cloudera")
       val url = "jdbc:mysql://localhost:3306/retail_db"
 
-      val ordersPath = "orders.csv"
+      val ordersPath = "hdfs:///tmp/orders/orders.csv"
       val csvFormat = "com.databricks.spark.csv"
       val mmdb = new File("/Users/mnetreba/Downloads/mmdb/countries.mmdb")
 
