@@ -1,45 +1,38 @@
-import java.io.File
 import java.net.InetAddress
 import java.util.Properties
 
 import com.maxmind.geoip2.DatabaseReader
 import com.maxmind.geoip2.exception.AddressNotFoundException
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.functions.desc
+import org.apache.spark.{SparkConf, SparkContext}
 
 object dfCountries {
 
-  def main(args: Array[String]): Unit = {
-    job()
-  }
-
-  def job(): Unit = {
-    val sc = new SparkContext(new SparkConf().setMaster("spark://master:7077").setAppName("CountingSheep"))
+  def main(args: Array[String]) {
+    val sc = new SparkContext(new SparkConf().setMaster("yarn-cluster").setAppName("CountingSheep"))
     val sql = new SQLContext(sc)
 
     // MySQL configs
     val prop = new Properties()
-    prop.put("user", "retail_dba")
-    prop.put("password", "cloudera")
-    val url = "jdbc:mysql://localhost:3306/retail_db"
+    prop.put("user", "")
+    prop.put("password", "")
+    val url = "jdbc:mysql://ip-10-0-0-21.us-west-1.compute.internal:3306/retail_db"
 
     val ordersPath = "hdfs:///tmp/orders/orders.csv"
-    val csvFormat = "com.databricks.spark.csv"
-    val mmdb = new File("/Users/mnetreba/Downloads/mmdb/countries.mmdb")
 
     // RDD from orders.csv
-    val rddOrders = sql.read
-      .format(csvFormat)
-      .option("header", value = false)
-      .load(ordersPath)
-      .rdd
+    val rddOrders = sc.textFile(ordersPath).map(line => line.split(",").map(elem => elem.trim))
 
     // Converting map with valid ips to RDD
-    val ipData = rddOrders.map(i => (i(4), i(1))).coalesce(5)
+    val ipData = rddOrders.map(i => (i(4), i(1)))
 
     val data = ipData.mapPartitions(part => {
-      val reader = new DatabaseReader.Builder(mmdb).build()
+      val fs = FileSystem.get(new Configuration())
+      val in = fs.open(new Path("/tmp/countries.mmdb"))
+      val reader = new DatabaseReader.Builder(in).build()
       part.map(p => (p._2, {
         val ipAddress = InetAddress.getByName(p._1.toString)
         try {
@@ -60,6 +53,8 @@ object dfCountries {
       .orderBy(desc("sum(product_price)"))
       .withColumnRenamed("sum(product_price)", "product_price")
       .limit(10)
+
+    topDF.show()
 
     // Write to MySQL
     topDF.write.mode("append").jdbc(url, "spark_countries", prop)
