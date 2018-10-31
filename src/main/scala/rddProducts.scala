@@ -9,6 +9,10 @@ object rddProducts {
     val rddOrders = sc.textFile(ordersPath).map(line => line.split(",").map(elem => elem.trim))
 
     // Most frequently appeared products with RDD
-    rddOrders.map(i => i(0)).map(i => (i, 1)).reduceByKey(_ + _).sortBy(_._2, ascending = false).take(10).foreach(println)
+    rddOrders.map(i => ((i(3), i(0)), i(1).toString.toInt))
+      .reduceByKey(_+_)
+      .map(i => (i._1._1,i._1._2,i._2))
+      .sortBy(_._1, ascending = false)
+      .foreach(println)
   }
 }
