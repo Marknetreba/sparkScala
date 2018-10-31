@@ -32,7 +32,11 @@ object dfProducts {
     val df = sql.createDataFrame(orders, schema)
 
     // Most frequently appeared products with DF
-    val productsDF = df.groupBy("product_name").count().sort(desc("count")).limit(10)
+    val productsDF = df.select("product_category","product_name","product_price")
+      .groupBy("product_category", "product_name")
+      .agg(Map("product_price" -> "sum"))
+      .withColumnRenamed("sum(product_price)", "price")
+      .orderBy(desc("product_category"), desc("price"))
 
     productsDF.show()
 
